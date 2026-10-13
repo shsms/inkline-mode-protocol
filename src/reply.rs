@@ -16,9 +16,9 @@ pub const MAX_ITEMS: usize = 1000;
 /// inkline's 1 MiB limit, past which it turns a mode server off.
 pub const MAX_ITEM_BYTES: usize = MAX_SPAN_BYTES;
 
-/// The most bytes of an error's message, or of an item's text or note, that
-/// are sent, so that a message quoting a very long word cannot push a reply
-/// past inkline's limit either.
+/// The most bytes of an error's message or an item's note that are sent, and of
+/// an item's text (a longer one is not sent at all), so that a message quoting
+/// a very long word cannot push a reply past inkline's limit either.
 pub const MAX_MESSAGE: usize = 4 << 10;
 
 /// What a coloured part of an argument is: each kind is drawn with the
@@ -159,10 +159,11 @@ pub fn write_indent(out: &mut impl Write, id: u64, depths: Option<Depths>) -> io
 
 /// Write the answer to a `:complete` request `id`: each item as `:item
 /// START END TEXT`, then `:note TEXT` when it has one, then `:end ID`. An
-/// item's text and note go through `one_line`, so a newline in either can
-/// never break a line; an item whose text is empty once it does is not
-/// written (nor is its note). At most [`MAX_ITEMS`] items are written, and
-/// they stop before their lines pass [`MAX_ITEM_BYTES`].
+/// item's text is sent as it is, or not at all: an item whose text is
+/// empty, longer than [`MAX_MESSAGE`] bytes, or holds a control character
+/// other than a tab is not written (nor is its note). A note is made one
+/// line of at most [`MAX_MESSAGE`] bytes. At most [`MAX_ITEMS`] items are
+/// written, and they stop before their lines pass [`MAX_ITEM_BYTES`].
 pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<()> {
     let mut written = 0;
     for lines in items.iter().filter_map(item_lines).take(MAX_ITEMS) {
@@ -176,7 +177,7 @@ pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<
 }
 
 /// Whether [`write_items`] writes every one of `items` that it does not
-/// leave out for an empty text: none is cut by [`MAX_ITEMS`] or
+/// leave out for its text: none is cut by [`MAX_ITEMS`] or
 /// [`MAX_ITEM_BYTES`]. A server that has more items than fit can put the
 /// ones it most wants sent first.
 pub fn items_fit(items: &[Item]) -> bool {
@@ -192,10 +193,14 @@ pub fn items_fit(items: &[Item]) -> bool {
 }
 
 /// The lines [`write_items`] writes for `item`: its `:item` line and its
-/// `:note` line, if any. `None` when its text is empty once it is one line.
+/// `:note` line, if any. `None` when its text cannot be sent as it is (see
+/// [`write_items`]).
 fn item_lines(item: &Item) -> Option<String> {
-    let text = one_line(&item.text);
-    if text.is_empty() {
+    let text = &item.text;
+    if text.is_empty()
+        || text.len() > MAX_MESSAGE
+        || text.chars().any(|c| c.is_control() && c != '\t')
+    {
         return None;
     }
     let mut lines = format!(":item {} {} {text}\n", item.at.start, item.at.end);
@@ -619,15 +624,16 @@ mod tests {
                 text: "first name".into(),
                 note: None,
             },
-            // Empty once it is one line: not written, nor its note.
+            // Not one line: not written, nor its note.
             Item {
                 at: 5..7,
-                text: "\nlater".into(),
+                text: "a\nb".into(),
                 note: Some("gone".into()),
             },
+            // A note is made one line.
             Item {
                 at: 0..0,
-                text: "a\nb".into(),
+                text: "ab".into(),
                 note: Some("c\rd\ne".into()),
             },
         ];
@@ -635,8 +641,42 @@ mod tests {
         assert_eq!(
             String::from_utf8(out).unwrap(),
             ":item 5 7 amount\n:note column\n:item 5 7 first name\n\
-             :item 0 0 a\n:note c d\n:end 9\n"
+             :item 0 0 ab\n:note c d\n:end 9\n"
         );
+    }
+
+    #[test]
+    fn an_item_is_sent_as_it_is_or_not_at_all() {
+        let item = |text: &str| Item {
+            at: 0..0,
+            text: text.into(),
+            note: None,
+        };
+        let sent = |text: &str| {
+            let mut out = Vec::new();
+            write_items(&mut out, 1, &[item(text)]).unwrap();
+            let out = String::from_utf8(out).unwrap();
+            out.strip_prefix(":item 0 0 ")
+                .and_then(|o| o.strip_suffix("\n:end 1\n"))
+                .map(str::to_string)
+        };
+        // Spaces at the end and tabs are part of the text.
+        assert_eq!(sent("a b "), Some("a b ".into()));
+        assert_eq!(sent("a\tb"), Some("a\tb".into()));
+        assert_eq!(
+            sent(&"x".repeat(MAX_MESSAGE)),
+            Some("x".repeat(MAX_MESSAGE))
+        );
+        // Text that inkline would not take as it is.
+        assert_eq!(sent(""), None);
+        assert_eq!(sent("a\nb"), None);
+        assert_eq!(sent("a\rb"), None);
+        assert_eq!(sent("a\x1bb"), None);
+        assert_eq!(sent(&"x".repeat(MAX_MESSAGE + 1)), None);
+        // Items left out do not count against the limits.
+        let mut items = numbered(MAX_ITEMS, 4);
+        items.push(item("a\nb"));
+        assert!(items_fit(&items));
     }
 
     fn numbered(n: usize, len: usize) -> Vec<Item> {
@@ -676,7 +716,7 @@ mod tests {
         assert!(items_fit(&numbered(MAX_ITEMS, 4)));
         assert!(!items_fit(&numbered(MAX_ITEMS + 1, 4)));
         assert!(!items_fit(&numbered(500, 4000)));
-        // Items left out for an empty text do not count.
+        // Items left out for their text do not count.
         let mut items = numbered(MAX_ITEMS, 4);
         items.push(Item {
             at: 0..0,
