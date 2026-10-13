@@ -27,12 +27,21 @@ pub struct Request {
 pub enum Ask {
     /// A colour request: the spans and the first error.
     Colors,
-    /// An `:indent` request, with its `:at` place: an argument's index and a
-    /// byte offset in it, at most its length.
-    Indent((usize, usize)),
-    /// A `:complete` request, with its `:at` place, the same shape as
-    /// `Indent`'s.
-    Complete((usize, usize)),
+    /// An `:indent` request, with its `:at` place: where the line breaks.
+    Indent(At),
+    /// A `:complete` request, with its `:at` place: where the cursor is.
+    Complete(At),
+}
+
+/// A place in a request's arguments, from an `:at ARG OFFSET` line: a point,
+/// unlike the byte ranges [`Item::at`](crate::Item::at) and
+/// [`Span::at`](crate::Span::at).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct At {
+    /// The argument's index in [`Request::args`].
+    pub arg: usize,
+    /// A byte offset in that argument, at most its length.
+    pub offset: usize,
 }
 
 /// One argument of the command line.
@@ -89,7 +98,7 @@ pub fn read_request(input: &mut impl BufRead) -> io::Result<Option<Request>> {
     // When this request needs an `:at` before its `:done`, the word its kind is
     // named by and the `Ask` it makes of the place; `None` for a colour
     // request, which does not.
-    type MakeAsk = fn((usize, usize)) -> Ask;
+    type MakeAsk = fn(At) -> Ask;
     let (id, needs_at): (u64, Option<(&str, MakeAsk)>) =
         if let Some(id) = line.strip_prefix(":indent ") {
             (number(id)?, Some(("indent", Ask::Indent)))
@@ -139,11 +148,14 @@ pub fn read_request(input: &mut impl BufRead) -> io::Result<Option<Request>> {
 
 /// The fields of an `:at` line, `ARG OFFSET`: an argument of `args` and a byte
 /// offset in it, at most its length.
-fn read_at(fields: &str, args: &[Arg]) -> io::Result<(usize, usize)> {
+fn read_at(fields: &str, args: &[Arg]) -> io::Result<At> {
     let (arg, offset) = fields.split_once(' ').ok_or_else(|| bad(fields))?;
-    let (arg, offset): (usize, usize) = (number(arg)?, number(offset)?);
-    match args.get(arg) {
-        Some(a) if offset <= a.bytes.len() => Ok((arg, offset)),
+    let at = At {
+        arg: number(arg)?,
+        offset: number(offset)?,
+    };
+    match args.get(at.arg) {
+        Some(a) if at.offset <= a.bytes.len() => Ok(at),
         _ => Err(bad(&format!(":at {fields}"))),
     }
 }
@@ -372,13 +384,13 @@ mod tests {
         assert_eq!(request.id, 8);
         assert_eq!(request.args.len(), 2);
         assert_eq!(request.args[1].bytes, b"join (\n");
-        assert_eq!(request.ask, Ask::Indent((1, 7)));
+        assert_eq!(request.ask, Ask::Indent(At { arg: 1, offset: 7 }));
         assert_eq!(read_request(&mut r).unwrap(), None);
         // A split at the start of an argument, or in the command's name.
         let mut r = &b":indent 9\n:cwd 0\n\n:arg final 4\ncsvm\n:at 0 0\n:done\n"[..];
         assert_eq!(
             read_request(&mut r).unwrap().unwrap().ask,
-            Ask::Indent((0, 0))
+            Ask::Indent(At { arg: 0, offset: 0 })
         );
     }
 
@@ -422,7 +434,7 @@ mod tests {
             ":complete 4\n:cwd 1\n/\n:arg final 4\ncsvm\n:arg final 2\nso\n:at 1 2\n:done\n";
         let request = read_request(&mut input.as_bytes()).unwrap().unwrap();
         assert_eq!(request.id, 4);
-        assert_eq!(request.ask, Ask::Complete((1, 2)));
+        assert_eq!(request.ask, Ask::Complete(At { arg: 1, offset: 2 }));
         // `:at` is needed, and must be inside the arguments.
         let no_at = ":complete 4\n:cwd 0\n\n:arg final 1\nx\n:done\n";
         assert!(read_request(&mut no_at.as_bytes()).is_err());

@@ -54,7 +54,7 @@ pub use reply::{
     Depths, Item, MAX_ITEM_BYTES, MAX_ITEMS, MAX_SPAN_BYTES, MAX_TEXT_BYTES, Reply, ReplyError,
     Span, SpanKind, items_fit, wanted_first, write_indent, write_items, write_reply,
 };
-pub use request::{Arg, Ask, Request, read_request};
+pub use request::{Arg, Ask, At, Request, read_request};
 
 use std::io::{self, BufRead, Write};
 
@@ -77,21 +77,20 @@ pub trait Mode {
     /// underline, if any.
     fn colors(&mut self, request: &Request) -> Reply;
 
-    /// The answer to an `:indent` request, `at` being its `:at` place: an
-    /// argument's index and a byte offset in it. `None` sends no depths.
-    /// inkline asks only a server whose first line names `indent` (see
-    /// [`Mode::INDENT`]).
-    fn indent(&mut self, request: &Request, at: (usize, usize)) -> Option<Depths> {
+    /// The answer to an `:indent` request, `at` being its `:at` place, where
+    /// the line breaks. `None` sends no depths. inkline asks only a server
+    /// whose first line names `indent` (see [`Mode::INDENT`]).
+    fn indent(&mut self, request: &Request, at: At) -> Option<Depths> {
         let _ = (request, at);
         None
     }
 
-    /// The answer to a `:complete` request, `at` being its `:at` place, as for
-    /// [`Mode::indent`]: the items, each replacing some bytes of the `:at`
+    /// The answer to a `:complete` request, `at` being its `:at` place, where
+    /// the cursor is: the items, each replacing some bytes of the `:at`
     /// argument. A reply holds only the first ones that fit (see
     /// [`write_items`]). inkline asks only a server whose first line names
     /// `complete` (see [`Mode::COMPLETE`]).
-    fn complete(&mut self, request: &Request, at: (usize, usize)) -> Vec<Item> {
+    fn complete(&mut self, request: &Request, at: At) -> Vec<Item> {
         let _ = (request, at);
         Vec::new()
     }
@@ -186,17 +185,17 @@ mod tests {
             Reply { spans, error: None }
         }
 
-        fn indent(&mut self, _: &Request, at: (usize, usize)) -> Option<Depths> {
+        fn indent(&mut self, _: &Request, at: At) -> Option<Depths> {
             Some(Depths {
-                new: at.0 + 1,
+                new: at.arg + 1,
                 current: None,
             })
         }
 
-        fn complete(&mut self, request: &Request, at: (usize, usize)) -> Vec<Item> {
-            let bytes = &request.args[at.0].bytes;
+        fn complete(&mut self, request: &Request, at: At) -> Vec<Item> {
+            let bytes = &request.args[at.arg].bytes;
             vec![Item {
-                at: 0..at.1,
+                at: 0..at.offset,
                 text: String::from_utf8_lossy(bytes).into_owned(),
                 note: None,
             }]
