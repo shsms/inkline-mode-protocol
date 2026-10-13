@@ -1,6 +1,6 @@
-//! The inkline mode protocol, from a mode server's side: what inkline asks
-//! a server to colour, indent and complete a command line while it is
-//! typed, and how the server answers.
+//! The inkline mode protocol, from a mode server's side: what inkline asks a
+//! server to colour, indent and complete a command line while it is typed, and
+//! how the server answers.
 //!
 //! inkline writes requests to the server's stdin:
 //!
@@ -13,8 +13,8 @@
 //! :done
 //! ```
 //!
-//! with one `:arg` per argument, the command's name first. The server
-//! answers each on stdout, in order:
+//! with one `:arg` per argument, the command's name first. The server answers
+//! each on stdout, in order:
 //!
 //! ```text
 //! :span ARG START END KIND
@@ -22,29 +22,27 @@
 //! :end ID
 //! ```
 //!
-//! A server that names `indent` on its first line may also be asked where
-//! a new line in an argument goes: an `:indent ID` request, with the same
-//! `:cwd` and `:arg` blocks and then `:at ARG OFFSET` (where the line
-//! breaks) before `:done`. It answers `:depth NEW CURRENT` (how deep the
-//! new line goes, and how deep the line being split goes, or `-` to leave
-//! it as it is), or nothing, then `:end ID`.
+//! A server that names `indent` on its first line may also be asked where a new
+//! line in an argument goes: an `:indent ID` request, with the same `:cwd` and
+//! `:arg` blocks and then `:at ARG OFFSET` (where the line breaks) before
+//! `:done`. It answers `:depth NEW CURRENT` (how deep the new line goes, and
+//! how deep the line being split goes, or `-` to leave it as it is), or
+//! nothing, then `:end ID`.
 //!
-//! A server that names `complete` on its first line may be asked for
-//! completion items at a place in an argument: a `:complete ID` request,
-//! with the same `:cwd` and `:arg` blocks and then `:at ARG OFFSET` before
-//! `:done`, as for `:indent`. It answers zero or more items, each an
-//! `:item START END TEXT` line (the bytes `START..END` of the `:at`
-//! argument that the item replaces) with an optional `:note TEXT` line
-//! right after it, then `:end ID`.
+//! A server that names `complete` on its first line may be asked for completion
+//! items at a place in an argument: a `:complete ID` request, with the same
+//! `:cwd` and `:arg` blocks and then `:at ARG OFFSET` before `:done`, as for
+//! `:indent`. It answers zero or more items, each an `:item START END TEXT`
+//! line (the bytes `START..END` of the `:at` argument that the item replaces)
+//! with an optional `:note TEXT` line right after it, then `:end ID`.
 //!
-//! Lengths and offsets count bytes. inkline's `docs/mode-protocol.md`
-//! describes the whole of the protocol.
+//! Lengths and offsets count bytes. inkline's `docs/mode-protocol.md` describes
+//! the whole of the protocol.
 //!
-//! A server implements [`Mode`] and hands it to [`serve`], which writes
-//! the first line and answers each request until the input ends or
-//! inkline goes.
-//! [`read_request`] and the `write_*` functions are there for a server
-//! that runs its own loop.
+//! A server implements [`Mode`] and hands it to [`serve`], which writes the
+//! first line and answers each request until the input ends or inkline goes.
+//! [`read_request`] and the `write_*` functions are there for a server that
+//! runs its own loop.
 
 mod reply;
 mod request;
@@ -60,15 +58,15 @@ use std::io::{self, BufRead, Write};
 /// What a mode server answers: colours and errors for every request, and
 /// indentation and completion items when it names them on its first line.
 pub trait Mode {
-    /// Whether the server answers `:indent` requests, which its first line
-    /// then names.
+    /// Whether the server answers `:indent` requests, which its first line then
+    /// names.
     const INDENT: bool = false;
-    /// Whether the server answers `:complete` requests, which its first
-    /// line then names.
+    /// Whether the server answers `:complete` requests, which its first line
+    /// then names.
     const COMPLETE: bool = false;
 
-    /// The answer to a colour request: the spans to colour, and the error
-    /// to underline, if any.
+    /// The answer to a colour request: the spans to colour, and the error to
+    /// underline, if any.
     fn colors(&mut self, request: &Request) -> Reply;
 
     /// The answer to an `:indent` request, `at` being its `:at` place: an
@@ -78,9 +76,9 @@ pub trait Mode {
         None
     }
 
-    /// The answer to a `:complete` request, `at` being its `:at` place, as
-    /// for [`Mode::indent`]: the items, each replacing some bytes of the
-    /// `:at` argument. A reply holds only the first ones that fit (see
+    /// The answer to a `:complete` request, `at` being its `:at` place, as for
+    /// [`Mode::indent`]: the items, each replacing some bytes of the `:at`
+    /// argument. A reply holds only the first ones that fit (see
     /// [`write_items`]).
     fn complete(&mut self, request: &Request, at: (usize, usize)) -> Vec<Item> {
         let _ = (request, at);
@@ -88,8 +86,8 @@ pub trait Mode {
     }
 }
 
-/// The first line a server for `M` writes, without its newline: the
-/// protocol's name and version, then the extra requests `M` answers.
+/// The first line a server for `M` writes, without its newline: the protocol's
+/// name and version, then the extra requests `M` answers.
 pub fn greeting<M: Mode>() -> String {
     let mut line = String::from("inkline-mode 1");
     if M::INDENT {
@@ -101,13 +99,12 @@ pub fn greeting<M: Mode>() -> String {
     line
 }
 
-/// Be the mode server: write [`greeting`], then answer each request read
-/// from `input` on `output` with `mode`, flushing after each reply, until
-/// `input` ends or inkline goes: a closed output
-/// ([`io::ErrorKind::BrokenPipe`]) or a reset connection
-/// ([`io::ErrorKind::ConnectionReset`]) ends it like the end of `input`.
-/// A request that breaks the protocol is an [`io::ErrorKind::InvalidData`]
-/// error (see [`read_request`]).
+/// Be the mode server: write [`greeting`], then answer each request read from
+/// `input` on `output` with `mode`, flushing after each reply, until `input`
+/// ends or inkline goes: a closed output ([`io::ErrorKind::BrokenPipe`]) or a
+/// reset connection ([`io::ErrorKind::ConnectionReset`]) ends it like the end
+/// of `input`. A request that breaks the protocol is an
+/// [`io::ErrorKind::InvalidData`] error (see [`read_request`]).
 pub fn serve<M: Mode>(
     input: &mut impl BufRead,
     output: &mut impl Write,
@@ -150,8 +147,8 @@ mod tests {
     use super::*;
 
     /// Colours the whole of each argument after the command's name as a
-    /// `variable`, indents one step past the `:at` argument's index, and
-    /// offers that argument's text as its one item.
+    /// `variable`, indents one step past the `:at` argument's index, and offers
+    /// that argument's text as its one item.
     struct Echo;
 
     impl Mode for Echo {

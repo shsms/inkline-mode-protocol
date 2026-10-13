@@ -4,9 +4,9 @@ use std::io::{self, Write};
 use std::ops::Range;
 
 /// The most bytes of `:span` lines one reply may hold. inkline turns a mode
-/// server off when a reply passes 1 MiB, so the spans past this are not
-/// sent (the end of a very long argument is then not coloured), which
-/// leaves room for the error and `:end`.
+/// server off when a reply passes 1 MiB, so the spans past this are not sent
+/// (the end of a very long argument is then not coloured), which leaves room
+/// for the error and `:end`.
 pub const MAX_SPAN_BYTES: usize = 900 << 10;
 
 /// The most items one reply to a `:complete` request holds.
@@ -29,8 +29,8 @@ pub enum SpanKind {
     Keyword,
     Option,
     Operator,
-    /// A mark between parts, such as the `|` between a pipeline's stages;
-    /// drawn with the `operator` colour when the user has not set its own.
+    /// A mark between parts, such as the `|` between a pipeline's stages; drawn
+    /// with the `operator` colour when the user has not set its own.
     Separator,
     String,
     Number,
@@ -78,8 +78,8 @@ pub struct Span {
 /// The one error a reply may carry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplyError {
-    /// The argument, and the bytes of it, the error is about; `None` when
-    /// it has no place in the arguments.
+    /// The argument, and the bytes of it, the error is about; `None` when it
+    /// has no place in the arguments.
     pub place: Option<(usize, Range<usize>)>,
     /// One line of text.
     pub message: String,
@@ -95,8 +95,7 @@ impl ReplyError {
     }
 }
 
-/// The answer to an `:indent` request: where two lines go, counted in
-/// steps.
+/// The answer to an `:indent` request: where two lines go, counted in steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Depths {
     /// The line that starts where the split is.
@@ -106,8 +105,8 @@ pub struct Depths {
     pub current: Option<usize>,
 }
 
-/// One completion item, the answer to a `:complete` request: it replaces
-/// the bytes `at` of the `:at` argument.
+/// One completion item, the answer to a `:complete` request: it replaces the
+/// bytes `at` of the `:at` argument.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     pub at: Range<usize>,
@@ -115,8 +114,8 @@ pub struct Item {
     pub note: Option<String>,
 }
 
-/// Write `reply` to request `id`, ending with `:end ID`. The spans stop
-/// before they pass [`MAX_SPAN_BYTES`]; the error, on one line of at most
+/// Write `reply` to request `id`, ending with `:end ID`. The spans stop before
+/// they pass [`MAX_SPAN_BYTES`]; the error, on one line of at most
 /// [`MAX_MESSAGE`] bytes, and the end are always written.
 pub fn write_reply(out: &mut impl Write, id: u64, reply: &Reply) -> io::Result<()> {
     let mut written = 0;
@@ -144,9 +143,9 @@ pub fn write_reply(out: &mut impl Write, id: u64, reply: &Reply) -> io::Result<(
     writeln!(out, ":end {id}")
 }
 
-/// Write the answer to `:indent` request `id`: `:depth NEW CURRENT` when
-/// there are depths, `CURRENT` being `-` when the line the split is on stays
-/// as it is, then `:end ID`.
+/// Write the answer to `:indent` request `id`: `:depth NEW CURRENT` when there
+/// are depths, `CURRENT` being `-` when the line the split is on stays as it
+/// is, then `:end ID`.
 pub fn write_indent(out: &mut impl Write, id: u64, depths: Option<Depths>) -> io::Result<()> {
     if let Some(d) = depths {
         match d.current {
@@ -157,13 +156,13 @@ pub fn write_indent(out: &mut impl Write, id: u64, depths: Option<Depths>) -> io
     writeln!(out, ":end {id}")
 }
 
-/// Write the answer to a `:complete` request `id`: each item as `:item
-/// START END TEXT`, then `:note TEXT` when it has one, then `:end ID`. An
-/// item's text is sent as it is, or not at all: an item whose text is
-/// empty, longer than [`MAX_MESSAGE`] bytes, or holds a control character
-/// other than a tab is not written (nor is its note). A note is made one
-/// line of at most [`MAX_MESSAGE`] bytes. At most [`MAX_ITEMS`] items are
-/// written, and they stop before their lines pass [`MAX_ITEM_BYTES`].
+/// Write the answer to a `:complete` request `id`: each item as `:item START
+/// END TEXT`, then `:note TEXT` when it has one, then `:end ID`. An item's text
+/// is sent as it is, or not at all: an item whose text is empty, longer than
+/// [`MAX_MESSAGE`] bytes, or holds a control character other than a tab is not
+/// written (nor is its note). A note is made one line of at most
+/// [`MAX_MESSAGE`] bytes. At most [`MAX_ITEMS`] items are written, and they
+/// stop before their lines pass [`MAX_ITEM_BYTES`].
 pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<()> {
     let mut written = 0;
     for lines in items.iter().filter_map(item_lines).take(MAX_ITEMS) {
@@ -176,10 +175,10 @@ pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<
     writeln!(out, ":end {id}")
 }
 
-/// Whether [`write_items`] writes every one of `items` that it does not
-/// leave out for its text: none is cut by [`MAX_ITEMS`] or
-/// [`MAX_ITEM_BYTES`]. A server that has more items than fit can put the
-/// ones it most wants sent first, as [`wanted_first`] does.
+/// Whether [`write_items`] writes every one of `items` that it does not leave
+/// out for its text: none is cut by [`MAX_ITEMS`] or [`MAX_ITEM_BYTES`]. A
+/// server that has more items than fit can put the ones it most wants sent
+/// first, as [`wanted_first`] does.
 pub fn items_fit(items: &[Item]) -> bool {
     // Stops at the first item past either limit.
     items
@@ -223,8 +222,8 @@ fn item_lines(item: &Item) -> Option<String> {
 }
 
 /// `message` as one line: up to its first newline, at most [`MAX_MESSAGE`]
-/// bytes, cut between two characters, a `\r` as a space, and no spaces at
-/// the end.
+/// bytes, cut between two characters, a `\r` as a space, and no spaces at the
+/// end.
 fn one_line(message: &str) -> String {
     let first = message.split('\n').next().unwrap_or("");
     let first = &first[..first.floor_char_boundary(MAX_MESSAGE)];
@@ -308,8 +307,8 @@ mod tests {
 
     /// inkline's reader requires the space before `MESSAGE` even when the
     /// message is empty (`:error ARG START END ` / `:error - - - `), so a
-    /// consumer can always split off four fields. This checks the exact
-    /// bytes for both an empty message with a place and one without.
+    /// consumer can always split off four fields. This checks the exact bytes
+    /// for both an empty message with a place and one without.
     #[test]
     fn an_error_with_an_empty_message_still_gets_its_trailing_space() {
         let reply = Reply {
@@ -363,15 +362,14 @@ mod tests {
 
     /// Check that `bytes` is a well-formed reply to request `id`, by the
     /// protocol's shape: every line ends in a newline and is a `:span`,
-    /// `:error` or `:end` line; a number field is plain ASCII digits, no
-    /// sign; `:span` and `:error` each carry exactly four space-separated
-    /// fields (so `MESSAGE`'s leading space is required even when it is
-    /// empty); a span has `START < END` and a placed error `START <= END`;
-    /// a placeless error is exactly `- - -`; there is at most one `:error`;
-    /// and the reply ends with `:end ID`, naming the request's `ID`, and
-    /// nothing after it. It does not know the arguments, so it cannot check
-    /// an offset against an argument's length, nor that spans do not
-    /// overlap, nor a span's `KIND`.
+    /// `:error` or `:end` line; a number field is plain ASCII digits, no sign;
+    /// `:span` and `:error` each carry exactly four space-separated fields (so
+    /// `MESSAGE`'s leading space is required even when it is empty); a span has
+    /// `START < END` and a placed error `START <= END`; a placeless error is
+    /// exactly `- - -`; there is at most one `:error`; and the reply ends with
+    /// `:end ID`, naming the request's `ID`, and nothing after it. It does not
+    /// know the arguments, so it cannot check an offset against an argument's
+    /// length, nor that spans do not overlap, nor a span's `KIND`.
     fn check_reply_is_well_formed(bytes: &[u8], id: u64) {
         fn is_number(s: &str) -> bool {
             !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
@@ -534,14 +532,14 @@ mod tests {
 
     /// Read `bytes` as inkline reads an indent reply to request `id`, and
     /// return its depths. inkline's rules: each line ends in a newline and
-    /// splits at its first space into a keyword and the rest; a line that
-    /// does not start with `:` is a failure; `:depth` comes at most once,
-    /// and its rest is exactly two fields, one space apart, each a number
-    /// made only of ASCII digits (no sign) that fits a `usize`, except that
-    /// the second may be `-` instead (read as `None`); `:end`'s rest is
-    /// such a number, equal to `id`, and ends the reply; any other `:` line
-    /// is passed over. [`write_indent`] writes nothing after `:end`, so the
-    /// reply must end there too.
+    /// splits at its first space into a keyword and the rest; a line that does
+    /// not start with `:` is a failure; `:depth` comes at most once, and its
+    /// rest is exactly two fields, one space apart, each a number made only of
+    /// ASCII digits (no sign) that fits a `usize`, except that the second may
+    /// be `-` instead (read as `None`); `:end`'s rest is such a number, equal
+    /// to `id`, and ends the reply; any other `:` line is passed over.
+    /// [`write_indent`] writes nothing after `:end`, so the reply must end
+    /// there too.
     fn read_as_inkline(bytes: &[u8], id: u64) -> Option<(usize, Option<usize>)> {
         fn number<T: std::str::FromStr>(field: &str) -> T {
             assert!(

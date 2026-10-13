@@ -7,9 +7,8 @@ use std::path::Path;
 /// The longest `:` line a request may have, newline included.
 const MAX_LINE: u64 = 256;
 
-/// The most bytes one `:cwd` or `:arg` may hold. A command line is far
-/// smaller; the limit keeps a corrupt length from asking for any amount of
-/// memory.
+/// The most bytes one `:cwd` or `:arg` may hold. A command line is far smaller;
+/// the limit keeps a corrupt length from asking for any amount of memory.
 const MAX_BYTES: usize = 16 << 20;
 
 /// One request: the shell's directory and the command's arguments.
@@ -28,8 +27,8 @@ pub struct Request {
 pub enum Ask {
     /// A colour request: the spans and the first error.
     Colors,
-    /// An `:indent` request, with its `:at` place: an argument's index and
-    /// a byte offset in it, at most its length.
+    /// An `:indent` request, with its `:at` place: an argument's index and a
+    /// byte offset in it, at most its length.
     Indent((usize, usize)),
     /// A `:complete` request, with its `:at` place, the same shape as
     /// `Indent`'s.
@@ -39,20 +38,19 @@ pub enum Ask {
 /// One argument of the command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arg {
-    /// Bash will still expand it, so `bytes` is the text as typed, not what
-    /// the command will get.
+    /// Bash will still expand it, so `bytes` is the text as typed, not what the
+    /// command will get.
     pub raw: bool,
     pub bytes: Vec<u8>,
 }
 
 impl Request {
-    /// The arguments after the command's name as text; `Err` with the place
-    /// of the first bytes that are not UTF-8: the argument, and the bytes of
-    /// it.
+    /// The arguments after the command's name as text; `Err` with the place of
+    /// the first bytes that are not UTF-8: the argument, and the bytes of it.
     pub fn words(&self) -> Result<Vec<String>, (usize, Range<usize>)> {
         let mut words = Vec::with_capacity(self.args.len());
-        // Argument 0 is the command's name, which may be any of the names
-        // the mode is used for.
+        // Argument 0 is the command's name, which may be any of the names the
+        // mode is used for.
         for (i, arg) in self.args.iter().enumerate().skip(1) {
             match std::str::from_utf8(&arg.bytes) {
                 Ok(text) => words.push(text.to_string()),
@@ -66,27 +64,27 @@ impl Request {
         Ok(words)
     }
 
-    /// The shell's directory, from `:cwd`. `None` when that is not an
-    /// absolute UTF-8 path: bash sends an empty one when `PWD` is unset.
+    /// The shell's directory, from `:cwd`. `None` when that is not an absolute
+    /// UTF-8 path: bash sends an empty one when `PWD` is unset.
     pub fn shell_dir(&self) -> Option<&Path> {
         let dir = Path::new(std::str::from_utf8(&self.cwd).ok()?);
         dir.is_absolute().then_some(dir)
     }
 }
 
-/// Read the next request, a colour (`:request`), an `:indent` or a
-/// `:complete` one; `None` when the input ends before one starts. Input
-/// that is not a request is an [`io::ErrorKind::InvalidData`] error: after
-/// it, the stream cannot be followed. So is an `:indent` or `:complete`
-/// request without `:at` just before its `:done`, an `:at` in a colour
-/// request, and an `:at` outside the request's arguments.
+/// Read the next request, a colour (`:request`), an `:indent` or a `:complete`
+/// one; `None` when the input ends before one starts. Input that is not a
+/// request is an [`io::ErrorKind::InvalidData`] error: after it, the stream
+/// cannot be followed. So is an `:indent` or `:complete` request without `:at`
+/// just before its `:done`, an `:at` in a colour request, and an `:at` outside
+/// the request's arguments.
 pub fn read_request(input: &mut impl BufRead) -> io::Result<Option<Request>> {
     let Some(line) = read_line(input)? else {
         return Ok(None);
     };
-    // When this request needs an `:at` before its `:done`, the word its
-    // kind is named by and the `Ask` it makes of the place; `None` for a
-    // colour request, which does not.
+    // When this request needs an `:at` before its `:done`, the word its kind is
+    // named by and the `Ask` it makes of the place; `None` for a colour
+    // request, which does not.
     type MakeAsk = fn((usize, usize)) -> Ask;
     let (id, needs_at): (u64, Option<(&str, MakeAsk)>) =
         if let Some(id) = line.strip_prefix(":indent ") {
@@ -136,8 +134,8 @@ pub fn read_request(input: &mut impl BufRead) -> io::Result<Option<Request>> {
     Ok(Some(Request { id, cwd, args, ask }))
 }
 
-/// The fields of an `:at` line, `ARG OFFSET`: an argument of `args` and a
-/// byte offset in it, at most its length.
+/// The fields of an `:at` line, `ARG OFFSET`: an argument of `args` and a byte
+/// offset in it, at most its length.
 fn read_at(fields: &str, args: &[Arg]) -> io::Result<(usize, usize)> {
     let (arg, offset) = fields.split_once(' ').ok_or_else(|| bad(fields))?;
     let (arg, offset): (usize, usize) = (number(arg)?, number(offset)?);

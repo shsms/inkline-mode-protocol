@@ -1,6 +1,6 @@
-//! The smallest mode server: it colours every argument after the command's
-//! name as a string. Build it with `cargo build --example words`, then
-//! point `inkline-define-mode` at `target/debug/examples/words`.
+//! The smallest mode server: it colours every argument after the command's name
+//! as a string. Build it with `cargo build --example words`, then point
+//! `inkline-define-mode` at `target/debug/examples/words`.
 
 use inkline_mode_protocol::{Mode, Reply, Request, Span, SpanKind, serve};
 

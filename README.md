@@ -1,9 +1,9 @@
 # inkline-mode-protocol
 
-The [inkline](https://github.com/shsms/inkline) mode protocol, from a mode server's side: reading
-the requests inkline sends while a command line is typed, and writing the
-replies that colour it, underline its first error, indent a new line and
-offer completion items.
+The [inkline](https://github.com/shsms/inkline) mode protocol, from a mode
+server's side: reading the requests inkline sends while a command line is typed,
+and writing the replies that colour it, underline its first error, indent a new
+line and offer completion items.
 
 A server implements `Mode` and runs `serve` on its stdin and stdout
 (`examples/words.rs`):
@@ -33,15 +33,15 @@ fn main() -> std::io::Result<()> {
 }
 ```
 
-A mode that answers `:indent` or `:complete` requests sets `Mode::INDENT`
-or `Mode::COMPLETE` and implements `Mode::indent` or `Mode::complete`; the
-first line the server writes then names them.
+A mode that answers `:indent` or `:complete` requests sets `Mode::INDENT` or
+`Mode::COMPLETE` and implements `Mode::indent` or `Mode::complete`; the first
+line the server writes then names them.
 
-The replies stay within inkline's limits: spans stop before 900 KiB of
-lines, items at 1,000 or 900 KiB, and an error's message and a note are
-each one line of at most 4 KiB. An item whose text is empty, over 4 KiB,
-or holds a control character other than a tab is left out, so the text
-inkline inserts is always the text the server offered.
+The replies stay within inkline's limits: spans stop before 900 KiB of lines,
+items at 1,000 or 900 KiB, and an error's message and a note are each one line
+of at most 4 KiB. An item whose text is empty, over 4 KiB, or holds a control
+character other than a tab is left out, so the text inkline inserts is always
+the text the server offered.
 
 inkline's `docs/mode-protocol.md` describes the whole of the protocol.
 
