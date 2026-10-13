@@ -173,7 +173,8 @@ pub fn write_indent(out: &mut impl Write, id: u64, depths: Option<Depths>) -> io
 /// space, and is not written when that leaves it empty. At most [`MAX_ITEMS`]
 /// items are written, and they stop before their lines pass [`MAX_ITEM_BYTES`];
 /// to keep the items inkline ranks first, put them at the front with
-/// [`typed_first`](crate::typed_first) before calling this.
+/// [`typed_first`](crate::typed_first) before calling this, as
+/// [`serve`](crate::serve) does.
 pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<()> {
     for lines in written_lines(items) {
         out.write_all(lines.as_bytes())?;

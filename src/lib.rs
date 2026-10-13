@@ -45,7 +45,9 @@
 //! A server implements [`Mode`] and hands it to [`serve`], which writes the
 //! first line and answers each request until the input ends or inkline goes;
 //! [`serve_stdio`] does that on stdin and stdout. [`read_request`] and the
-//! `write_*` functions are there for a server that runs its own loop.
+//! `write_*` functions are there for a server that runs its own loop; such a
+//! server can pass its completion items through [`typed_first`] before
+//! [`write_items`], as `serve` does.
 
 mod reply;
 mod request;
@@ -88,8 +90,11 @@ pub trait Mode {
     /// The answer to a `:complete` request, `at` being its `:at` place, where
     /// the cursor is: the items, each replacing some bytes of the `:at`
     /// argument. A reply holds only the first ones that fit (see
-    /// [`write_items`]). inkline asks only a server whose first line names
-    /// `complete` (see [`Mode::COMPLETE`]).
+    /// [`write_items`]); when they do not all fit, [`serve`] puts the ones that
+    /// start with the typed text first (see [`typed_first`]), so the order
+    /// given here decides only the order within those and within the rest.
+    /// inkline asks only a server whose first line names `complete` (see
+    /// [`Mode::COMPLETE`]).
     fn complete(&mut self, request: &Request, at: At) -> Vec<Item> {
         let _ = (request, at);
         Vec::new()
@@ -117,8 +122,9 @@ pub fn greeting<M: Mode>() -> String {
 /// came: from [`read_request`] when reading a request, or from `output` when
 /// writing or flushing it.
 ///
-/// A reply is written line by line, so `output` is best buffered (such as a
-/// [`io::BufWriter`]); the flush after each reply sends it.
+/// A completion reply's items go through [`typed_first`] before they are
+/// written. A reply is written line by line, so `output` is best buffered (such
+/// as a [`io::BufWriter`]); the flush after each reply sends it.
 pub fn serve<M: Mode>(
     input: &mut impl BufRead,
     output: &mut impl Write,
@@ -176,7 +182,10 @@ fn answer_each<M: Mode>(
         match request.ask {
             Ask::Colors => write_reply(output, request.id, &mode.colors(&request))?,
             Ask::Indent(at) => write_indent(output, request.id, mode.indent(&request, at))?,
-            Ask::Complete(at) => write_items(output, request.id, &mode.complete(&request, at))?,
+            Ask::Complete(at) => {
+                let items = typed_first(mode.complete(&request, at), &request, at);
+                write_items(output, request.id, &items)?;
+            }
         }
         output.flush()?;
     }
@@ -263,6 +272,39 @@ mod tests {
              :depth 2 -\n:end 2\n\
              :item 0 2 abc\n:end 3\n"
         );
+    }
+
+    /// Offers more items than a reply holds, the one that starts with the typed
+    /// text last.
+    struct Many;
+
+    impl Mode for Many {
+        const COMPLETE: bool = true;
+
+        fn colors(&mut self, _: &Request) -> Reply {
+            Reply::default()
+        }
+
+        fn complete(&mut self, _: &Request, at: At) -> Vec<Item> {
+            (0..=MAX_ITEMS)
+                .map(|i| format!("x{i}"))
+                .chain(["abc".into()])
+                .map(|text| Item {
+                    at: 0..at.offset,
+                    text,
+                    note: None,
+                })
+                .collect()
+        }
+    }
+
+    #[test]
+    fn serve_sends_the_items_that_start_with_the_typed_text_first() {
+        // The cursor is after "ab" in "abz": "abc" starts with the typed text.
+        let input = ":complete 1\n:cwd 0\n\n:arg final 1\nc\n:arg final 3\nabz\n:at 1 2\n:done\n";
+        let out = served(&mut Many, input);
+        let first = out.lines().find(|l| l.starts_with(":item"));
+        assert_eq!(first, Some(":item 0 2 abc"));
     }
 
     #[test]
