@@ -41,7 +41,8 @@
 //! describes the whole of the protocol.
 //!
 //! A server implements [`Mode`] and hands it to [`serve`], which writes
-//! the first line and answers each request until the input ends.
+//! the first line and answers each request until the input ends or
+//! inkline goes.
 //! [`read_request`] and the `write_*` functions are there for a server
 //! that runs its own loop.
 
@@ -102,9 +103,31 @@ pub fn greeting<M: Mode>() -> String {
 
 /// Be the mode server: write [`greeting`], then answer each request read
 /// from `input` on `output` with `mode`, flushing after each reply, until
-/// `input` ends. A request that breaks the protocol is an
-/// [`io::ErrorKind::InvalidData`] error (see [`read_request`]).
+/// `input` ends or inkline goes: a closed output
+/// ([`io::ErrorKind::BrokenPipe`]) or a reset connection
+/// ([`io::ErrorKind::ConnectionReset`]) ends it like the end of `input`.
+/// A request that breaks the protocol is an [`io::ErrorKind::InvalidData`]
+/// error (see [`read_request`]).
 pub fn serve<M: Mode>(
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+    mode: &mut M,
+) -> io::Result<()> {
+    match answer_each(input, output, mode) {
+        Err(e)
+            if matches!(
+                e.kind(),
+                io::ErrorKind::BrokenPipe | io::ErrorKind::ConnectionReset
+            ) =>
+        {
+            Ok(())
+        }
+        done => done,
+    }
+}
+
+/// [`serve`], where inkline going is an error too.
+fn answer_each<M: Mode>(
     input: &mut impl BufRead,
     output: &mut impl Write,
     mode: &mut M,
@@ -212,6 +235,42 @@ mod tests {
             served(&mut Plain, input),
             "inkline-mode 1\n:end 1\n:end 2\n"
         );
+    }
+
+    /// Fails every read or write with `kind`, as a socket inkline has closed
+    /// does.
+    struct Gone(io::ErrorKind);
+
+    impl io::Read for Gone {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Err(self.0.into())
+        }
+    }
+
+    impl Write for Gone {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(self.0.into())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Err(self.0.into())
+        }
+    }
+
+    #[test]
+    fn serving_ends_quietly_when_inkline_goes() {
+        use io::ErrorKind::{BrokenPipe, ConnectionReset};
+        let input = ":request 1\n:cwd 1\n/\n:arg final 1\nc\n:done\n";
+        for kind in [BrokenPipe, ConnectionReset] {
+            let mut output = Gone(kind);
+            assert!(serve(&mut input.as_bytes(), &mut output, &mut Plain).is_ok());
+            let mut input = io::BufReader::new(Gone(kind));
+            assert!(serve(&mut input, &mut Vec::new(), &mut Plain).is_ok());
+        }
+        // Any other failure is still an error.
+        let mut output = Gone(io::ErrorKind::PermissionDenied);
+        let err = serve(&mut input.as_bytes(), &mut output, &mut Plain).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
     }
 
     #[test]
