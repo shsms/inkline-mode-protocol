@@ -280,6 +280,42 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
     }
 
+    /// Keeps what was written, and what had been written at each flush.
+    #[derive(Default)]
+    struct Flushes {
+        written: Vec<u8>,
+        at_flush: Vec<String>,
+    }
+
+    impl Write for Flushes {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.written.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.at_flush
+                .push(String::from_utf8(self.written.clone()).unwrap());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn serve_flushes_after_the_greeting_and_each_reply() {
+        let input = ":request 1\n:cwd 0\n\n:arg final 1\nc\n:done\n\
+                     :request 2\n:cwd 0\n\n:arg final 1\nc\n:done\n";
+        let mut output = Flushes::default();
+        serve(&mut input.as_bytes(), &mut output, &mut Plain).unwrap();
+        assert_eq!(
+            output.at_flush,
+            [
+                "inkline-mode 1\n",
+                "inkline-mode 1\n:end 1\n",
+                "inkline-mode 1\n:end 1\n:end 2\n"
+            ]
+        );
+    }
+
     #[test]
     fn a_request_that_breaks_the_protocol_stops_serving() {
         let mut out = Vec::new();

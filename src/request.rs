@@ -334,6 +334,36 @@ mod tests {
     }
 
     #[test]
+    fn a_line_of_at_most_max_line_bytes_is_read() {
+        // An id padded with zeros, so that only the line's length can fail.
+        let with_line = |len: usize| {
+            let digits = len - ":request \n".len();
+            format!(":request {:0>digits$}\n:cwd 1\n/\n:done\n", 1)
+        };
+        let fits = with_line(MAX_LINE as usize);
+        assert_eq!(read_request(&mut fits.as_bytes()).unwrap().unwrap().id, 1);
+        let over = with_line(MAX_LINE as usize + 1);
+        assert_eq!(
+            read_request(&mut over.as_bytes()).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn a_block_of_at_most_max_bytes_is_read() {
+        let mut fits = format!(":request 1\n:cwd {MAX_BYTES}\n").into_bytes();
+        fits.resize(fits.len() + MAX_BYTES, b'/');
+        fits.extend_from_slice(b"\n:done\n");
+        let request = read_request(&mut &fits[..]).unwrap().unwrap();
+        assert_eq!(request.cwd.len(), MAX_BYTES);
+        let over = format!(":request 1\n:cwd {}\n", MAX_BYTES + 1);
+        assert_eq!(
+            read_request(&mut over.as_bytes()).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn an_indent_request_is_read_with_where_it_splits() {
         let input = b":indent 8\n:cwd 1\n/\n:arg final 4\ncsvm\n:arg final 7\njoin (\n\n\
                       :at 1 7\n:done\n";

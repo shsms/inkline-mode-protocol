@@ -782,6 +782,20 @@ mod tests {
     }
 
     #[test]
+    fn notes_count_against_the_byte_limit() {
+        let item = Item {
+            at: 0..0,
+            text: "a".into(),
+            note: Some("n".repeat(4000)),
+        };
+        let items = vec![item; 500];
+        assert!(!items_fit(&items));
+        let mut out = Vec::new();
+        write_items(&mut out, 1, &items).unwrap();
+        assert!(out.len() - ":end 1\n".len() <= MAX_ITEM_BYTES);
+    }
+
+    #[test]
     fn items_fit_when_none_is_cut() {
         assert!(items_fit(&[]));
         assert!(items_fit(&numbered(MAX_ITEMS, 4)));
