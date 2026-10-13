@@ -5,13 +5,11 @@ server's side: reading the requests inkline sends while a command line is typed,
 and writing the replies that colour it, underline its first error, indent a new
 line and offer completion items.
 
-A server implements `Mode` and runs `serve` on its stdin and stdout
-(`examples/words.rs`):
+A server implements `Mode` and runs `serve_stdio`, which serves its stdin and
+stdout (`examples/words.rs`):
 
 ```rust,no_run
-use std::io::BufWriter;
-
-use inkline_mode_protocol::{Mode, Reply, Request, Span, SpanKind, serve};
+use inkline_mode_protocol::{Mode, Reply, Request, Span, SpanKind, serve_stdio};
 
 struct Words;
 
@@ -31,9 +29,7 @@ impl Mode for Words {
 }
 
 fn main() -> std::io::Result<()> {
-    // A reply is many short lines, and `serve` flushes after each reply.
-    let mut output = BufWriter::new(std::io::stdout().lock());
-    serve(&mut std::io::stdin().lock(), &mut output, &mut Words)
+    serve_stdio(&mut Words)
 }
 ```
 

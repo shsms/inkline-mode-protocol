@@ -43,9 +43,9 @@
 //! the whole of the protocol.
 //!
 //! A server implements [`Mode`] and hands it to [`serve`], which writes the
-//! first line and answers each request until the input ends or inkline goes.
-//! [`read_request`] and the `write_*` functions are there for a server that
-//! runs its own loop.
+//! first line and answers each request until the input ends or inkline goes;
+//! [`serve_stdio`] does that on stdin and stdout. [`read_request`] and the
+//! `write_*` functions are there for a server that runs its own loop.
 
 mod reply;
 mod request;
@@ -135,6 +135,12 @@ pub fn serve<M: Mode>(
         }
         done => done,
     }
+}
+
+/// [`serve`] on this process's stdin and stdout, with stdout buffered.
+pub fn serve_stdio<M: Mode>(mode: &mut M) -> io::Result<()> {
+    let mut output = io::BufWriter::new(io::stdout().lock());
+    serve(&mut io::stdin().lock(), &mut output, mode)
 }
 
 /// [`serve`], where inkline going is an error too.
