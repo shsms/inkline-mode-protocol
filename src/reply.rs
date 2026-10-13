@@ -162,8 +162,9 @@ pub fn write_indent(out: &mut impl Write, id: u64, depths: Option<Depths>) -> io
 /// is sent as it is, or not at all: an item whose text is empty, longer than
 /// [`MAX_MESSAGE`] bytes, or holds a control character other than a tab is not
 /// written (nor is its note). A note is made one line of at most
-/// [`MAX_MESSAGE`] bytes. At most [`MAX_ITEMS`] items are written, and they
-/// stop before their lines pass [`MAX_ITEM_BYTES`].
+/// [`MAX_MESSAGE`] bytes, with each control character other than a tab as a
+/// space, and is not written when that leaves it empty. At most [`MAX_ITEMS`]
+/// items are written, and they stop before their lines pass [`MAX_ITEM_BYTES`].
 pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<()> {
     for lines in written_lines(items) {
         out.write_all(lines.as_bytes())?;
@@ -209,9 +210,13 @@ fn written_lines(items: &[Item]) -> impl Iterator<Item = String> {
 /// Whether an item's `text` can be sent as it is: not empty, at most
 /// [`MAX_MESSAGE`] bytes, and no control character other than a tab.
 fn sendable(text: &str) -> bool {
-    !text.is_empty()
-        && text.len() <= MAX_MESSAGE
-        && !text.chars().any(|c| c.is_control() && c != '\t')
+    !text.is_empty() && text.len() <= MAX_MESSAGE && !text.chars().any(refused)
+}
+
+/// Whether inkline refuses `c` in an item's text or a note: a control character
+/// other than a tab.
+fn refused(c: char) -> bool {
+    c.is_control() && c != '\t'
 }
 
 /// The lines [`write_items`] writes for `item`: its `:item` line and its
@@ -222,19 +227,21 @@ fn item_lines(item: &Item) -> Option<String> {
         return None;
     }
     let mut lines = format!(":item {} {} {text}\n", item.at.start, item.at.end);
-    if let Some(note) = &item.note {
-        lines.push_str(&format!(":note {}\n", one_line(note)));
+    if let Some(note) = item.note.as_deref().map(one_line)
+        && !note.is_empty()
+    {
+        lines.push_str(&format!(":note {note}\n"));
     }
     Some(lines)
 }
 
 /// `message` as one line: up to its first newline, at most [`MAX_MESSAGE`]
-/// bytes, cut between two characters, a `\r` as a space, and no spaces at the
-/// end.
+/// bytes, cut between two characters, each control character other than a tab
+/// as a space, and no white space at the end.
 fn one_line(message: &str) -> String {
     let first = message.split('\n').next().unwrap_or("");
     let first = &first[..first.floor_char_boundary(MAX_MESSAGE)];
-    first.replace('\r', " ").trim_end().to_string()
+    first.replace(refused, " ").trim_end().to_string()
 }
 
 #[cfg(test)]
@@ -365,6 +372,40 @@ mod tests {
         assert!(message.starts_with("a b\u{e9}"));
         assert!(message.len() <= MAX_MESSAGE);
         assert!(message.len() > MAX_MESSAGE - 2);
+    }
+
+    #[test]
+    fn a_control_character_in_a_message_or_note_is_a_space() {
+        let reply = Reply {
+            spans: Vec::new(),
+            error: Some(ReplyError {
+                place: None,
+                message: "bad \x1b[31mcolour\x7f\u{85}end\tok".to_string(),
+            }),
+        };
+        let mut out = Vec::new();
+        write_reply(&mut out, 1, &reply).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            ":error - - - bad  [31mcolour  end\tok\n:end 1\n"
+        );
+        let item = |note: &str| Item {
+            at: 0..0,
+            text: "a".into(),
+            note: Some(note.into()),
+        };
+        let mut out = Vec::new();
+        write_items(
+            &mut out,
+            2,
+            &[item("col\x07umn"), item("\nlater"), item("  ")],
+        )
+        .unwrap();
+        // A note that is empty once it is one line is not written.
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            ":item 0 0 a\n:note col umn\n:item 0 0 a\n:item 0 0 a\n:end 2\n"
+        );
     }
 
     /// Check that `bytes` is a well-formed reply to request `id`, by the
