@@ -179,7 +179,7 @@ pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<
 /// Whether [`write_items`] writes every one of `items` that it does not
 /// leave out for its text: none is cut by [`MAX_ITEMS`] or
 /// [`MAX_ITEM_BYTES`]. A server that has more items than fit can put the
-/// ones it most wants sent first.
+/// ones it most wants sent first, as [`wanted_first`] does.
 pub fn items_fit(items: &[Item]) -> bool {
     // Stops at the first item past either limit.
     items
@@ -190,6 +190,18 @@ pub fn items_fit(items: &[Item]) -> bool {
             (n <= MAX_ITEMS && b <= MAX_ITEM_BYTES).then_some((n, b))
         })
         .is_some()
+}
+
+/// `items`, with the ones `wanted` picks first when they do not all fit (see
+/// [`items_fit`]), so that the ones [`write_items`] cuts are the others. Each
+/// group keeps its order, and so do `items` when they all fit.
+pub fn wanted_first(items: Vec<Item>, wanted: impl FnMut(&Item) -> bool) -> Vec<Item> {
+    if items_fit(&items) {
+        return items;
+    }
+    let (mut first, rest): (Vec<Item>, Vec<Item>) = items.into_iter().partition(wanted);
+    first.extend(rest);
+    first
 }
 
 /// The lines [`write_items`] writes for `item`: its `:item` line and its
@@ -708,6 +720,19 @@ mod tests {
         let (count, bytes) = written(&numbered(500, 4000));
         assert!(count < 500);
         assert!(bytes <= MAX_ITEM_BYTES && bytes > MAX_ITEM_BYTES - 4100);
+    }
+
+    #[test]
+    fn the_wanted_items_come_first_when_not_all_fit() {
+        let odd = |item: &Item| item.text.ends_with(['1', '3', '5', '7', '9']);
+        // All fit: the order is kept.
+        let items = numbered(4, 4);
+        assert_eq!(wanted_first(items.clone(), odd), items);
+        // Not all fit: the wanted ones first, each group in its own order.
+        let items = numbered(MAX_ITEMS + 2, 4);
+        let ordered = wanted_first(items.clone(), odd);
+        let (wanted, rest): (Vec<Item>, Vec<Item>) = items.into_iter().partition(odd);
+        assert_eq!(ordered, [wanted, rest].concat());
     }
 
     #[test]
