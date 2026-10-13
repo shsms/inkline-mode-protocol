@@ -16,9 +16,10 @@ pub const MAX_ITEMS: usize = 1000;
 /// inkline's 1 MiB limit, past which it turns a mode server off.
 pub const MAX_ITEM_BYTES: usize = MAX_SPAN_BYTES;
 
-/// The most bytes of an error's message or an item's note that are sent, and of
-/// an item's text (a longer one is not sent at all), so that a message quoting
-/// a very long word cannot push a reply past inkline's limit either.
+/// The most bytes of an error's message that are sent, so that a message
+/// quoting a very long word cannot push a reply past inkline's 1 MiB limit. A
+/// note is cut to this length too, and an item whose text is longer is not
+/// sent.
 pub const MAX_MESSAGE: usize = 4 << 10;
 
 /// What a coloured part of an argument is: each kind is drawn with the
@@ -179,8 +180,9 @@ pub fn items_fit(items: &[Item]) -> bool {
 }
 
 /// `items`, with the ones `wanted` picks first when they do not all fit (see
-/// [`items_fit`]), so that the ones [`write_items`] cuts are the others. Each
-/// group keeps its order, and so do `items` when they all fit.
+/// [`items_fit`]), so that [`write_items`] cuts the others before any wanted
+/// one. Each group keeps its order. When they all fit, `items` come back as
+/// they are and `wanted` is not called.
 pub fn wanted_first(items: Vec<Item>, wanted: impl FnMut(&Item) -> bool) -> Vec<Item> {
     if items_fit(&items) {
         return items;
