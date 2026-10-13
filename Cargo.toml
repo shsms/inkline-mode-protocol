@@ -2,6 +2,7 @@
 name = "inkline-mode-protocol"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.91"
 description = "The inkline mode protocol: reading requests and writing replies for an inkline mode server."
 license = "GPL-3.0-only"
 
