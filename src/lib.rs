@@ -143,6 +143,27 @@ pub fn serve_stdio<M: Mode>(mode: &mut M) -> io::Result<()> {
     serve(&mut io::stdin().lock(), &mut output, mode)
 }
 
+/// `items`, the answer to a `:complete` `request` with the cursor `at`, with
+/// the items that start with the typed text first when they do not all fit (see
+/// [`wanted_first`]). An item's typed text is the bytes of the `:at` argument
+/// from the item's start to the cursor. inkline drops an item when the cursor
+/// is outside its range or the range goes past the argument's end (see
+/// [`Item`]); such an item is not counted.
+///
+/// An item whose text starts with a quote mark (`` ` ``, `'` or `"`) also
+/// counts when the text after the mark starts with the typed text. inkline
+/// counts it only when the mark goes on the line as it is, but a request does
+/// not say how a `final` argument is quoted at the cursor, so this always
+/// counts it.
+///
+/// inkline ranks first the items that start with the typed text. With
+/// `inkline-completion-ignore-case` it ranks next the items that start with it
+/// in another case; this does not count those.
+pub fn typed_first(items: Vec<Item>, request: &Request, at: At) -> Vec<Item> {
+    let arg = request.args.get(at.arg).map_or(&[][..], |a| &a.bytes[..]);
+    reply::prefer_typed(items, arg, at.offset)
+}
+
 /// [`serve`], where inkline going is an error too.
 fn answer_each<M: Mode>(
     input: &mut impl BufRead,

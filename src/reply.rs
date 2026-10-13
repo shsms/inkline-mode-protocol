@@ -112,7 +112,9 @@ pub struct Depths {
 }
 
 /// One completion item, the answer to a `:complete` request: it replaces the
-/// bytes `at` of the `:at` argument.
+/// bytes `at` of the `:at` argument. inkline drops an item when the cursor is
+/// outside `at` or `at` goes past the argument's end. A cursor at either end of
+/// `at` is inside it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     pub at: Range<usize>,
@@ -169,7 +171,9 @@ pub fn write_indent(out: &mut impl Write, id: u64, depths: Option<Depths>) -> io
 /// not written (nor is its note). A note is made one line of at most
 /// [`MAX_TEXT_BYTES`] bytes, with each control character other than a tab as a
 /// space, and is not written when that leaves it empty. At most [`MAX_ITEMS`]
-/// items are written, and they stop before their lines pass [`MAX_ITEM_BYTES`].
+/// items are written, and they stop before their lines pass [`MAX_ITEM_BYTES`];
+/// to keep the items inkline ranks first, put them at the front with
+/// [`typed_first`](crate::typed_first) before calling this.
 pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<()> {
     for lines in written_lines(items) {
         out.write_all(lines.as_bytes())?;
@@ -196,6 +200,20 @@ pub fn wanted_first(items: Vec<Item>, wanted: impl FnMut(&Item) -> bool) -> Vec<
     let (mut first, rest): (Vec<Item>, Vec<Item>) = items.into_iter().partition(wanted);
     first.extend(rest);
     first
+}
+
+/// [`typed_first`](crate::typed_first), given the bytes of the `:at` argument
+/// and the cursor's offset in them.
+pub(crate) fn prefer_typed(items: Vec<Item>, arg: &[u8], offset: usize) -> Vec<Item> {
+    wanted_first(items, |item| {
+        offset <= item.at.end
+            && item.at.end <= arg.len()
+            && arg.get(item.at.start..offset).is_some_and(|typed| {
+                let text = item.text.as_bytes();
+                text.starts_with(typed)
+                    || matches!(text, [b'`' | b'\'' | b'"', rest @ ..] if rest.starts_with(typed))
+            })
+    })
 }
 
 /// The lines [`write_items`] writes for `items`, one entry per item: the items
@@ -771,6 +789,47 @@ mod tests {
         let (count, bytes) = written(&numbered(500, 4000));
         assert!(count < 500);
         assert!(bytes <= MAX_ITEM_BYTES && bytes > MAX_ITEM_BYTES - 4100);
+    }
+
+    #[test]
+    fn the_items_that_start_with_the_typed_text_come_first() {
+        // The cursor is after "ab" in the argument "abc".
+        let (arg, offset) = (b"abc", 2);
+        let item = |at: Range<usize>, text: &str| Item {
+            at,
+            text: text.into(),
+            note: None,
+        };
+        let mut items = numbered(MAX_ITEMS, 4);
+        items.extend([
+            // Typed: "ab".
+            item(0..3, "abx"),
+            // After a leading quote mark.
+            item(0..3, "`ab x`"),
+            item(0..3, "'ab y'"),
+            item(0..2, "\"ab z\""),
+            // Typed: "b", from the item's start.
+            item(1..3, "bz"),
+            // Typed: nothing, at the cursor.
+            item(2..2, "q"),
+            // Not the typed text, after a quote mark either.
+            item(0..3, "xab"),
+            item(0..3, "'xy'"),
+            // Ranges that do not hold the cursor, or pass the argument's end.
+            item(3..3, "c"),
+            item(0..1, "abc"),
+            item(0..4, "abd"),
+        ]);
+        let first = prefer_typed(items.clone(), arg, offset);
+        let texts: Vec<&str> = first[..7].iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            ["abx", "`ab x`", "'ab y'", "\"ab z\"", "bz", "q", "0000"]
+        );
+        assert_eq!(first.len(), items.len());
+        // When they all fit, the order is kept.
+        let few = vec![item(0..3, "xab"), item(0..3, "abx")];
+        assert_eq!(prefer_typed(few.clone(), arg, offset), few);
     }
 
     #[test]
