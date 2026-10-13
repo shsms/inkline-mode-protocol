@@ -17,11 +17,11 @@ pub const MAX_ITEMS: usize = 1000;
 /// inkline's 1 MiB limit, past which it turns a mode server off.
 pub const MAX_ITEM_BYTES: usize = MAX_SPAN_BYTES;
 
-/// The most bytes of an error's message that are sent, so that a message
-/// quoting a very long word cannot push a reply past inkline's 1 MiB limit. A
-/// note is cut to this length too, and an item whose text is longer is not
-/// sent.
-pub const MAX_MESSAGE: usize = 4 << 10;
+/// The most bytes of one text. An error's message is cut to this length, so
+/// that a message quoting a very long word cannot push a reply over the limit
+/// inkline sets, 1 MiB. A note is cut to it too, and an item whose text is
+/// longer is not sent.
+pub const MAX_TEXT_BYTES: usize = 4 << 10;
 
 /// What a coloured part of an argument is: each kind is drawn with the
 /// `inkline-colors` key of the same name.
@@ -122,7 +122,7 @@ pub struct Item {
 
 /// Write `reply` to request `id`, ending with `:end ID`. The spans stop before
 /// they pass [`MAX_SPAN_BYTES`]; the error, on one line of at most
-/// [`MAX_MESSAGE`] bytes, and the end are always written.
+/// [`MAX_TEXT_BYTES`] bytes, and the end are always written.
 pub fn write_reply(out: &mut impl Write, id: u64, reply: &Reply) -> io::Result<()> {
     let mut written = 0;
     for span in &reply.spans {
@@ -165,9 +165,9 @@ pub fn write_indent(out: &mut impl Write, id: u64, depths: Option<Depths>) -> io
 /// Write the answer to a `:complete` request `id`: each item as `:item START
 /// END TEXT`, then `:note TEXT` when it has one, then `:end ID`. An item's text
 /// is sent as it is, or not at all: an item whose text is empty, longer than
-/// [`MAX_MESSAGE`] bytes, or holds a control character other than a tab is not
-/// written (nor is its note). A note is made one line of at most
-/// [`MAX_MESSAGE`] bytes, with each control character other than a tab as a
+/// [`MAX_TEXT_BYTES`] bytes, or holds a control character other than a tab is
+/// not written (nor is its note). A note is made one line of at most
+/// [`MAX_TEXT_BYTES`] bytes, with each control character other than a tab as a
 /// space, and is not written when that leaves it empty. At most [`MAX_ITEMS`]
 /// items are written, and they stop before their lines pass [`MAX_ITEM_BYTES`].
 pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<()> {
@@ -213,9 +213,9 @@ fn written_lines(items: &[Item]) -> impl Iterator<Item = String> {
 }
 
 /// Whether an item's `text` can be sent as it is: not empty, at most
-/// [`MAX_MESSAGE`] bytes, and no control character other than a tab.
+/// [`MAX_TEXT_BYTES`] bytes, and no control character other than a tab.
 fn sendable(text: &str) -> bool {
-    !text.is_empty() && text.len() <= MAX_MESSAGE && !text.chars().any(refused)
+    !text.is_empty() && text.len() <= MAX_TEXT_BYTES && !text.chars().any(refused)
 }
 
 /// Whether inkline refuses `c` in an item's text or a note: a control character
@@ -240,12 +240,12 @@ fn item_lines(item: &Item) -> Option<String> {
     Some(lines)
 }
 
-/// `message` as one line: up to its first newline, at most [`MAX_MESSAGE`]
+/// `message` as one line: up to its first newline, at most [`MAX_TEXT_BYTES`]
 /// bytes, cut between two characters, each control character other than a tab
 /// as a space, and no white space at the end.
 fn one_line(message: &str) -> String {
     let first = message.split('\n').next().unwrap_or("");
-    let first = &first[..first.floor_char_boundary(MAX_MESSAGE)];
+    let first = &first[..first.floor_char_boundary(MAX_TEXT_BYTES)];
     first.replace(refused, " ").trim_end().to_string()
 }
 
@@ -364,7 +364,7 @@ mod tests {
             spans: Vec::new(),
             error: Some(ReplyError {
                 place: Some((1, 0..1)),
-                message: format!("a\rb{}", "é".repeat(MAX_MESSAGE)),
+                message: format!("a\rb{}", "é".repeat(MAX_TEXT_BYTES)),
             }),
         };
         let mut out = Vec::new();
@@ -375,8 +375,8 @@ mod tests {
             .and_then(|t| t.strip_suffix("\n:end 2\n"))
             .unwrap();
         assert!(message.starts_with("a b\u{e9}"));
-        assert!(message.len() <= MAX_MESSAGE);
-        assert!(message.len() > MAX_MESSAGE - 2);
+        assert!(message.len() <= MAX_TEXT_BYTES);
+        assert!(message.len() > MAX_TEXT_BYTES - 2);
     }
 
     #[test]
@@ -727,15 +727,15 @@ mod tests {
         assert_eq!(sent("a b "), Some("a b ".into()));
         assert_eq!(sent("a\tb"), Some("a\tb".into()));
         assert_eq!(
-            sent(&"x".repeat(MAX_MESSAGE)),
-            Some("x".repeat(MAX_MESSAGE))
+            sent(&"x".repeat(MAX_TEXT_BYTES)),
+            Some("x".repeat(MAX_TEXT_BYTES))
         );
         // Text that inkline would not take as it is.
         assert_eq!(sent(""), None);
         assert_eq!(sent("a\nb"), None);
         assert_eq!(sent("a\rb"), None);
         assert_eq!(sent("a\x1bb"), None);
-        assert_eq!(sent(&"x".repeat(MAX_MESSAGE + 1)), None);
+        assert_eq!(sent(&"x".repeat(MAX_TEXT_BYTES + 1)), None);
         // Items left out do not count against the limits.
         let mut items = numbered(MAX_ITEMS, 4);
         items.push(item("a\nb"));

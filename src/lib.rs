@@ -51,8 +51,8 @@ mod reply;
 mod request;
 
 pub use reply::{
-    Depths, Item, MAX_ITEM_BYTES, MAX_ITEMS, MAX_MESSAGE, MAX_SPAN_BYTES, Reply, ReplyError, Span,
-    SpanKind, items_fit, wanted_first, write_indent, write_items, write_reply,
+    Depths, Item, MAX_ITEM_BYTES, MAX_ITEMS, MAX_SPAN_BYTES, MAX_TEXT_BYTES, Reply, ReplyError,
+    Span, SpanKind, items_fit, wanted_first, write_indent, write_items, write_reply,
 };
 pub use request::{Arg, Ask, Request, read_request};
 
