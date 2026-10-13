@@ -4,9 +4,10 @@ use std::io::{self, Write};
 use std::ops::Range;
 
 /// The most bytes of `:span` lines one reply may hold. inkline turns a mode
-/// server off when a reply passes 1 MiB, so the spans past this are not sent
-/// (the end of a very long argument is then not coloured), which leaves room
-/// for the error and `:end`.
+/// server off when a reply passes 1 MiB, so the spans past this are not sent.
+/// This leaves room for the error and `:end`. When the spans are in the order
+/// of the text they colour, the end of the command's arguments is then not
+/// coloured.
 pub const MAX_SPAN_BYTES: usize = 900 << 10;
 
 /// The most items one reply to a `:complete` request holds.
@@ -61,7 +62,9 @@ impl SpanKind {
 /// The answer to one colour request.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Reply {
-    /// In order, none overlapping another.
+    /// In any order; when their lines pass [`MAX_SPAN_BYTES`], [`write_reply`]
+    /// cuts the ones at the end of the list. inkline drops a span that overlaps
+    /// one it kept before it in the same argument.
     pub spans: Vec<Span>,
     pub error: Option<ReplyError>,
 }
@@ -96,7 +99,9 @@ impl ReplyError {
     }
 }
 
-/// The answer to an `:indent` request: where two lines go, counted in steps.
+/// The answer to an `:indent` request: how deep two lines go, as nesting
+/// depths. The "Indenting a new line" part of inkline's `docs/mode-protocol.md`
+/// says how far in inkline puts a line at each depth.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Depths {
     /// The line that starts where the split is.

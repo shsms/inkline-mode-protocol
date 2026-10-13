@@ -65,7 +65,7 @@ impl Request {
     }
 
     /// The shell's directory, from `:cwd`. `None` when that is not an absolute
-    /// UTF-8 path: bash sends an empty one when `PWD` is unset.
+    /// UTF-8 path: inkline sends an empty one when `PWD` is unset.
     pub fn shell_dir(&self) -> Option<&Path> {
         let dir = Path::new(std::str::from_utf8(&self.cwd).ok()?);
         dir.is_absolute().then_some(dir)

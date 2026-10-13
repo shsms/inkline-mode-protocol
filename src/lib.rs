@@ -2,7 +2,10 @@
 //! server to colour, indent and complete a command line while it is typed, and
 //! how the server answers.
 //!
-//! inkline writes requests to the server's stdin:
+//! A server first writes one line, `inkline-mode 1`, followed by the names of
+//! the extra requests it answers, each after a space (`inkline-mode 1 indent
+//! complete`); inkline ignores names it does not know. inkline then writes
+//! requests to the server's stdin:
 //!
 //! ```text
 //! :request ID
@@ -60,7 +63,7 @@ use std::io::{self, BufRead, Write};
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
 
-/// What a mode server answers: colours and errors for every request, and
+/// What a mode server answers: colours and errors for every colour request, and
 /// indentation and completion items when it names them on its first line.
 pub trait Mode {
     /// Whether the server answers `:indent` requests, which its first line then
@@ -76,6 +79,8 @@ pub trait Mode {
 
     /// The answer to an `:indent` request, `at` being its `:at` place: an
     /// argument's index and a byte offset in it. `None` sends no depths.
+    /// inkline asks only a server whose first line names `indent` (see
+    /// [`Mode::INDENT`]).
     fn indent(&mut self, request: &Request, at: (usize, usize)) -> Option<Depths> {
         let _ = (request, at);
         None
@@ -84,7 +89,8 @@ pub trait Mode {
     /// The answer to a `:complete` request, `at` being its `:at` place, as for
     /// [`Mode::indent`]: the items, each replacing some bytes of the `:at`
     /// argument. A reply holds only the first ones that fit (see
-    /// [`write_items`]).
+    /// [`write_items`]). inkline asks only a server whose first line names
+    /// `complete` (see [`Mode::COMPLETE`]).
     fn complete(&mut self, request: &Request, at: (usize, usize)) -> Vec<Item> {
         let _ = (request, at);
         Vec::new()

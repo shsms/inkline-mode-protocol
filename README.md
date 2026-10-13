@@ -41,8 +41,9 @@ A mode that answers `:indent` or `:complete` requests sets `Mode::INDENT` or
 `Mode::COMPLETE` and implements `Mode::indent` or `Mode::complete`; the first
 line the server writes then names them.
 
-The replies stay within inkline's limits: spans stop before 900 KiB of lines,
-items at 1,000 or 900 KiB, and an error's message and a note are each one line
+inkline turns a server off when a reply passes 1 MiB, and keeps at most 1,000
+items. To stay within that, spans stop before 900 KiB of lines, items stop at
+1,000 or at 900 KiB, and an error's message and a note are each cut to one line
 of at most 4 KiB. An item whose text is empty, over 4 KiB, or holds a control
 character other than a tab is left out. An item's text is never cut or changed:
 it is sent as the server gave it, or not at all.
