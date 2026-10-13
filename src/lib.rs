@@ -106,10 +106,11 @@ pub fn greeting<M: Mode>() -> String {
 
 /// Be the mode server: write [`greeting`], then answer each request read from
 /// `input` on `output` with `mode`, flushing after each reply. It ends with
-/// `Ok` when `input` ends between two requests or inkline goes: a closed output
-/// ([`io::ErrorKind::BrokenPipe`]) or a reset connection
-/// ([`io::ErrorKind::ConnectionReset`]). A request that breaks the protocol is
-/// an [`io::ErrorKind::InvalidData`] error (see [`read_request`]).
+/// `Ok` when `input` ends before a request starts, or when inkline goes: a
+/// closed output ([`io::ErrorKind::BrokenPipe`]) or a reset connection
+/// ([`io::ErrorKind::ConnectionReset`]). Any other error is returned as it
+/// came: from [`read_request`] when reading a request, or from `output` when
+/// writing or flushing it.
 ///
 /// A reply is written line by line, so `output` is best buffered (such as a
 /// [`io::BufWriter`]); the flush after each reply sends it.

@@ -77,7 +77,11 @@ impl Request {
 /// request is an [`io::ErrorKind::InvalidData`] error: after it, the stream
 /// cannot be followed. So is an `:indent` or `:complete` request without `:at`
 /// just before its `:done`, an `:at` in a colour request, and an `:at` outside
-/// the request's arguments.
+/// the request's arguments. Input that ends inside a request is an
+/// [`io::ErrorKind::UnexpectedEof`] error, unless a complete line or block
+/// before the end is already an [`io::ErrorKind::InvalidData`] error. A `:`
+/// line of more than 255 bytes before its newline is an
+/// [`io::ErrorKind::InvalidData`] error, even when the input ends inside it.
 pub fn read_request(input: &mut impl BufRead) -> io::Result<Option<Request>> {
     let Some(line) = read_line(input)? else {
         return Ok(None);
@@ -101,10 +105,9 @@ pub fn read_request(input: &mut impl BufRead) -> io::Result<Option<Request>> {
         let line = need_line(input)?;
         if line == ":done" {
             if let Some((name, _)) = needs_at {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("an :{name} request needs :at before :done"),
-                ));
+                return Err(invalid(format!(
+                    "an :{name} request needs :at before :done"
+                )));
             }
             break Ask::Colors;
         }
@@ -158,14 +161,20 @@ fn number<T: std::str::FromStr>(text: &str) -> io::Result<T> {
     text.parse().map_err(|_| bad(text))
 }
 
-/// One `:` line, without its newline; `None` at the end of the input.
+/// One `:` line, without its newline; `None` at the end of the input. If the
+/// input ends inside a line, before its newline, that is an [`ended`] error,
+/// unless the line already holds [`MAX_LINE`] bytes and so cannot be a `:`
+/// line.
 fn read_line(input: &mut impl BufRead) -> io::Result<Option<String>> {
     let mut line = Vec::new();
     input.by_ref().take(MAX_LINE).read_until(b'\n', &mut line)?;
     if line.is_empty() {
         return Ok(None);
     }
-    if line.pop() != Some(b'\n') {
+    if line.pop_if(|b| *b == b'\n').is_none() {
+        if (line.len() as u64) < MAX_LINE {
+            return Err(ended());
+        }
         return Err(bad(&String::from_utf8_lossy(&line)));
     }
     String::from_utf8(line)
@@ -175,33 +184,47 @@ fn read_line(input: &mut impl BufRead) -> io::Result<Option<String>> {
 
 /// [`read_line`], where the end of the input is an error.
 fn need_line(input: &mut impl BufRead) -> io::Result<String> {
-    read_line(input)?.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            "the input ended inside a request",
-        )
-    })
+    read_line(input)?.ok_or_else(ended)
 }
 
 /// `len` bytes, then the newline after them.
 fn read_bytes(input: &mut impl BufRead, len: usize) -> io::Result<Vec<u8>> {
     if len > MAX_BYTES {
-        return Err(bad(&format!("{len} bytes")));
+        return Err(invalid(format!(
+            "a :cwd or :arg of {len} bytes is over the limit of {MAX_BYTES}"
+        )));
     }
     let mut bytes = vec![0; len + 1];
-    input.read_exact(&mut bytes)?;
+    input.read_exact(&mut bytes).map_err(|e| {
+        if e.kind() == io::ErrorKind::UnexpectedEof {
+            ended()
+        } else {
+            e
+        }
+    })?;
     if bytes.pop() != Some(b'\n') {
-        return Err(bad("no newline after the bytes"));
+        return Err(invalid("no newline after the bytes of a :cwd or :arg"));
     }
     Ok(bytes)
 }
 
-/// The error for input that is not a request.
-fn bad(what: &str) -> io::Error {
+/// The error for input that ends inside a request.
+fn ended() -> io::Error {
     io::Error::new(
-        io::ErrorKind::InvalidData,
-        format!("not an inkline mode request: {what:?}"),
+        io::ErrorKind::UnexpectedEof,
+        "the input ended inside a request",
     )
+}
+
+/// The error for input that is not a request, quoting `what`: the line, or the
+/// part of a line, that is wrong, as far as it was read.
+fn bad(what: &str) -> io::Error {
+    invalid(format!("not an inkline mode request: {what:?}"))
+}
+
+/// The error for a request that breaks the protocol, saying how.
+fn invalid(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
 
 #[cfg(test)]
@@ -244,6 +267,42 @@ mod tests {
     }
 
     #[test]
+    fn input_that_ends_inside_a_request_is_one_error_wherever_it_ends() {
+        let full = b":request 1\n:cwd 1\n/\n:arg final 4\ncsvm\n:done\n";
+        for cut in 1..full.len() {
+            let err = read_request(&mut &full[..cut]).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof, "cut at {cut}");
+            assert_eq!(
+                err.to_string(),
+                "the input ended inside a request",
+                "cut at {cut}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_error_quotes_the_line_read_or_says_what_is_wrong() {
+        let error = |input: &[u8]| read_request(&mut &input[..]).unwrap_err().to_string();
+        // A line too long is quoted as far as it was read.
+        let long = format!(":request {}", "1".repeat(300));
+        assert_eq!(
+            error(long.as_bytes()),
+            format!(
+                "not an inkline mode request: {:?}",
+                &long[..MAX_LINE as usize]
+            )
+        );
+        assert_eq!(
+            error(b":request 1\n:cwd 99999999999\n"),
+            format!("a :cwd or :arg of 99999999999 bytes is over the limit of {MAX_BYTES}")
+        );
+        assert_eq!(
+            error(b":request 1\n:cwd 1\n/x:done\n"),
+            "no newline after the bytes of a :cwd or :arg"
+        );
+    }
+
+    #[test]
     fn a_request_that_breaks_the_protocol_is_an_error() {
         use io::ErrorKind::{InvalidData, UnexpectedEof};
         let bad = |input: &[u8]| {
@@ -253,8 +312,8 @@ mod tests {
         assert_eq!(bad(b"hello\n"), InvalidData);
         assert_eq!(bad(b":request x\n"), InvalidData);
         assert_eq!(bad(b":request +1\n"), InvalidData);
-        // A line cut off, or too long to be a `:` line.
-        assert_eq!(bad(b":request 1"), InvalidData);
+        // A line cut off by the end of the input, or too long to be a `:` line.
+        assert_eq!(bad(b":request 1"), UnexpectedEof);
         assert_eq!(
             bad(format!(":request {}\n", "1".repeat(300)).as_bytes()),
             InvalidData
