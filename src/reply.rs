@@ -164,12 +164,7 @@ pub fn write_indent(out: &mut impl Write, id: u64, depths: Option<Depths>) -> io
 /// [`MAX_MESSAGE`] bytes. At most [`MAX_ITEMS`] items are written, and they
 /// stop before their lines pass [`MAX_ITEM_BYTES`].
 pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<()> {
-    let mut written = 0;
-    for lines in items.iter().filter_map(item_lines).take(MAX_ITEMS) {
-        written += lines.len();
-        if written > MAX_ITEM_BYTES {
-            break;
-        }
+    for lines in written_items(items) {
         out.write_all(lines.as_bytes())?;
     }
     writeln!(out, ":end {id}")
@@ -180,15 +175,7 @@ pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<
 /// server that has more items than fit can put the ones it most wants sent
 /// first, as [`wanted_first`] does.
 pub fn items_fit(items: &[Item]) -> bool {
-    // Stops at the first item past either limit.
-    items
-        .iter()
-        .filter_map(item_lines)
-        .try_fold((0, 0), |(n, b), l| {
-            let (n, b) = (n + 1, b + l.len());
-            (n <= MAX_ITEMS && b <= MAX_ITEM_BYTES).then_some((n, b))
-        })
-        .is_some()
+    written_items(items).count() == items.iter().filter(|i| sendable(&i.text)).count()
 }
 
 /// `items`, with the ones `wanted` picks first when they do not all fit (see
@@ -203,15 +190,33 @@ pub fn wanted_first(items: Vec<Item>, wanted: impl FnMut(&Item) -> bool) -> Vec<
     first
 }
 
+/// The lines [`write_items`] writes for `items`, one entry per item: the items
+/// whose text is [`sendable`], at most [`MAX_ITEMS`] of them, stopping before
+/// their lines pass [`MAX_ITEM_BYTES`].
+fn written_items(items: &[Item]) -> impl Iterator<Item = String> {
+    items
+        .iter()
+        .filter_map(item_lines)
+        .take(MAX_ITEMS)
+        .scan(0, |written, lines| {
+            *written += lines.len();
+            (*written <= MAX_ITEM_BYTES).then_some(lines)
+        })
+}
+
+/// Whether an item's `text` can be sent as it is: not empty, at most
+/// [`MAX_MESSAGE`] bytes, and no control character other than a tab.
+fn sendable(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= MAX_MESSAGE
+        && !text.chars().any(|c| c.is_control() && c != '\t')
+}
+
 /// The lines [`write_items`] writes for `item`: its `:item` line and its
-/// `:note` line, if any. `None` when its text cannot be sent as it is (see
-/// [`write_items`]).
+/// `:note` line, if any. `None` when its text is not [`sendable`].
 fn item_lines(item: &Item) -> Option<String> {
     let text = &item.text;
-    if text.is_empty()
-        || text.len() > MAX_MESSAGE
-        || text.chars().any(|c| c.is_control() && c != '\t')
-    {
+    if !sendable(text) {
         return None;
     }
     let mut lines = format!(":item {} {} {text}\n", item.at.start, item.at.end);
