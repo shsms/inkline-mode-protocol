@@ -2,6 +2,8 @@
 //! as a string. Build it with `cargo build --example words`, then point
 //! `inkline-define-mode` at `target/debug/examples/words`.
 
+use std::io::BufWriter;
+
 use inkline_mode_protocol::{Mode, Reply, Request, Span, SpanKind, serve};
 
 struct Words;
@@ -26,9 +28,7 @@ impl Mode for Words {
 }
 
 fn main() -> std::io::Result<()> {
-    serve(
-        &mut std::io::stdin().lock(),
-        &mut std::io::stdout().lock(),
-        &mut Words,
-    )
+    // A reply is many short lines, and `serve` flushes after each reply.
+    let mut output = BufWriter::new(std::io::stdout().lock());
+    serve(&mut std::io::stdin().lock(), &mut output, &mut Words)
 }

@@ -105,6 +105,9 @@ pub fn greeting<M: Mode>() -> String {
 /// reset connection ([`io::ErrorKind::ConnectionReset`]) ends it like the end
 /// of `input`. A request that breaks the protocol is an
 /// [`io::ErrorKind::InvalidData`] error (see [`read_request`]).
+///
+/// A reply is written line by line, so `output` is best buffered (such as a
+/// [`io::BufWriter`]); the flush after each reply sends it.
 pub fn serve<M: Mode>(
     input: &mut impl BufRead,
     output: &mut impl Write,
