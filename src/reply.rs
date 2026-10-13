@@ -165,7 +165,7 @@ pub fn write_indent(out: &mut impl Write, id: u64, depths: Option<Depths>) -> io
 /// [`MAX_MESSAGE`] bytes. At most [`MAX_ITEMS`] items are written, and they
 /// stop before their lines pass [`MAX_ITEM_BYTES`].
 pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<()> {
-    for lines in written_items(items) {
+    for lines in written_lines(items) {
         out.write_all(lines.as_bytes())?;
     }
     writeln!(out, ":end {id}")
@@ -176,7 +176,7 @@ pub fn write_items(out: &mut impl Write, id: u64, items: &[Item]) -> io::Result<
 /// server that has more items than fit can put the ones it most wants sent
 /// first, as [`wanted_first`] does.
 pub fn items_fit(items: &[Item]) -> bool {
-    written_items(items).count() == items.iter().filter(|i| sendable(&i.text)).count()
+    written_lines(items).count() == items.iter().filter(|i| sendable(&i.text)).count()
 }
 
 /// `items`, with the ones `wanted` picks first when they do not all fit (see
@@ -195,7 +195,7 @@ pub fn wanted_first(items: Vec<Item>, wanted: impl FnMut(&Item) -> bool) -> Vec<
 /// The lines [`write_items`] writes for `items`, one entry per item: the items
 /// whose text is [`sendable`], at most [`MAX_ITEMS`] of them, stopping before
 /// their lines pass [`MAX_ITEM_BYTES`].
-fn written_items(items: &[Item]) -> impl Iterator<Item = String> {
+fn written_lines(items: &[Item]) -> impl Iterator<Item = String> {
     items
         .iter()
         .filter_map(item_lines)
