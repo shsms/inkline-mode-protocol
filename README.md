@@ -8,7 +8,7 @@ line and offer completion items.
 A server implements `Mode` and runs `serve` on its stdin and stdout
 (`examples/words.rs`):
 
-```rust
+```rust,no_run
 use std::io::BufWriter;
 
 use inkline_mode_protocol::{Mode, Reply, Request, Span, SpanKind, serve};

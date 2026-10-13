@@ -55,6 +55,11 @@ pub use request::{Arg, Ask, Request, read_request};
 
 use std::io::{self, BufRead, Write};
 
+/// The README's example, built as a doc test.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 /// What a mode server answers: colours and errors for every request, and
 /// indentation and completion items when it names them on its first line.
 pub trait Mode {
